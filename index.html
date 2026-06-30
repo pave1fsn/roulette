@@ -166,6 +166,7 @@
 
     <script>
         const MIN_DONATE_AMOUNT = 50; 
+        const USER_ID = "de1c086a-dbc1-4f20-9f86-403ab4adeb5d"; // Твой ID из токена
 
         const listItems = [
             { text: "Экономический кризис", type: "chance-high", weight: 15 },
@@ -188,6 +189,7 @@
         const statusText = document.getElementById('status');
         let isSpinning = false;
         let donateQueue = [];
+        let pingInterval;
 
         function buildTape() {
             tape.innerHTML = '';
@@ -248,57 +250,83 @@
         }
 
         function setupWidgetData() {
-            const token = prompt("Шаг 1: Вставьте ваш JWT-токен:");
+            const token = prompt("Вставьте ваш JWT-токен:");
             if (!token) return;
-            const uid = prompt("Шаг 2: Вставьте ваш User ID (из сокетов DonateX):");
-            if (!uid) return;
-
             localStorage.setItem('dtx_tkn', token.trim());
-            localStorage.setItem('dtx_uid', uid.trim());
-            alert("Данные сохранены локально! Страница будет перезапущена.");
+            alert("Токен сохранен!");
             location.reload();
         }
 
         function connect() {
             const token = localStorage.getItem('dtx_tkn');
-            const uid = localStorage.getItem('dtx_uid');
 
-            if (!token || !uid) {
-                statusText.textContent = "[ Нажми сюда для настройки токена ]";
+            if (!token) {
+                statusText.textContent = "[ Кликни для ввода JWT токена ]";
                 statusText.style.color = "#ff0055";
                 return;
             }
 
             try {
-                const ws = new WebSocket('wss://pubsub.donatex.gg/ws');
+                // Подключаемся к официальному websocket шлюзу
+                const ws = new WebSocket('wss://pubsub.donatex.gg/connection/websocket');
 
                 ws.onopen = function() {
-                    statusText.textContent = "Авторизация сокетов...";
+                    statusText.textContent = "Авторизация...";
                     statusText.style.color = "#ffca65";
-                    ws.send(JSON.stringify({ action: "auth", token: token }));
+
+                    // Формат протокола Centrifuge: отправляем коннект-пакет с токеном
+                    const connectCmd = {
+                        connect: { token: token },
+                        id: 1
+                    };
+                    ws.send(JSON.stringify(connectCmd));
+
+                    // Запускаем пинг, чтобы соединение не разрывалось по таймауту
+                    clearInterval(pingInterval);
+                    pingInterval = setInterval(() => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({}));
+                        }
+                    }, 25000);
                 };
 
                 ws.onmessage = function(event) {
                     try {
                         const msg = JSON.parse(event.data);
-                        if (msg.status === "success" || msg.event === "connected") {
+                        
+                        // Ответ на коннект успешный -> сразу шлем подписку на личный канал донатов
+                        if (msg.id === 1 && msg.connect && msg.connect.client) {
+                            const subscribeCmd = {
+                                subscribe: { channel: `$user:${USER_ID}` },
+                                id: 2
+                            };
+                            ws.send(JSON.stringify(subscribeCmd));
+                            
                             statusText.textContent = "DonateX: Подключено";
                             statusText.style.color = "#00e7ff";
                             return;
                         }
 
-                        let amount = 0;
-                        if (msg.data && msg.data.data) {
-                            amount = parseFloat(msg.data.data.amount || msg.data.data.sum || 0);
+                        // Парсим входящие уведомления о донатах в канале
+                        if (msg.push && msg.push.pub && msg.push.pub.data) {
+                            const donateData = msg.push.pub.data;
+                            if (donateData.data && donateData.data.amount) {
+                                const amount = parseFloat(donateData.data.amount);
+                                if (amount > 0) processDonate(amount);
+                            }
                         }
-                        if (amount > 0) processDonate(amount);
                     } catch (e) {}
                 };
 
                 ws.onclose = function() {
+                    clearInterval(pingInterval);
                     statusText.textContent = "Переподключение...";
                     statusText.style.color = "#ff0055";
-                    setTimeout(connect, 5000);
+                    setTimeout(connect, 4000);
+                };
+
+                ws.onerror = function() {
+                    ws.close();
                 };
             } catch (e) {
                 statusText.textContent = "Ошибка сети";
