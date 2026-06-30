@@ -142,7 +142,6 @@
             font-size: 10px;
         }
     </style>
-    <script src="https://unpkg.com/centrifuge@2.8.4/dist/centrifuge.min.js"></script>
 </head>
 <body>
 
@@ -166,9 +165,8 @@
     <script>
         const MIN_DONATE_AMOUNT = 50; 
         
-        // Твои железные данные напрямую в коде
+        // Твой валидный токен
         const DTX_TKN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJjNTBlNDkzNC1lYWYzLTRhMmUtOTVhNi04MDc2MGZiMzQ1MzQiLCJVc2VySWQiOiJkZTFjMDg2YS1kYmMxLTRmMjAtOWY4Ni00MDNhYjRhZGViNWQiLCJVc2VybmFtZSI6IlJlc2VydHplZCIsImlzcyI6Imh0dHBzOi8vZG9uYXRleC5nZy9hcGkiLCJhdWQiOiJodHRwczovL2RvbmF0ZXguZ2cifQ.3_g5UNTJ8OPyKFNxki09Gew6n39IreK-zPhM4RLrqAI";
-        const DTX_UID = "de1c086a-dbc1-4f20-9f86-403ab4adeb5d";
 
         const listItems = [
             { text: "Экономический кризис", type: "chance-high", weight: 15 },
@@ -250,43 +248,49 @@
             }
         }
 
-        function initCentrifuge() {
+        function initDonateXSocket() {
             try {
-                // Инициализируем через официальную библиотеку unpkg
-                const centrifuge = new Centrifuge('wss://pubsub.donatex.gg/connection/websocket', {
-                    websocket: WebSocket
-                });
+                // Передаем токен прямо в URL-параметрах, как требует DonateX API
+                const ws = new WebSocket(`wss://pubsub.donatex.gg/ws?token=${DTX_TKN}`);
 
-                centrifuge.setToken(DTX_TKN);
-
-                centrifuge.on('connect', function(context) {
+                ws.onopen = function() {
                     statusText.textContent = "DonateX: Подключено";
                     statusText.style.color = "#00e7ff";
-                });
+                };
 
-                centrifuge.on('disconnect', function(context) {
-                    statusText.textContent = "DonateX: Отключено";
-                    statusText.style.color = "#ff0055";
-                });
-
-                // Подписка по официальному протоколу DonateX
-                centrifuge.subscribe(`$user:${DTX_UID}`, function(message) {
-                    if (message.data && message.data.data && message.data.data.amount) {
-                        processDonate(parseFloat(message.data.data.amount));
+                ws.onmessage = function(event) {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        
+                        // Проверяем структуру уведомления о новом донате по документации
+                        if (msg && msg.amount) {
+                            const amount = parseFloat(msg.amount);
+                            if (amount > 0) processDonate(amount);
+                        }
+                    } catch (e) {
+                        console.error("Ошибка чтения данных уведомления:", e);
                     }
-                });
+                };
 
-                centrifuge.connect();
+                ws.onclose = function() {
+                    statusText.textContent = "DonateX: Реконнект...";
+                    statusText.style.color = "#ff0055";
+                    setTimeout(initDonateXSocket, 5000);
+                };
+
+                ws.onerror = function() {
+                    statusText.textContent = "DonateX: Ошибка сокета";
+                    statusText.style.color = "#ff0055";
+                };
 
             } catch (err) {
-                statusText.textContent = "Ошибка библиотеки сокетов";
+                statusText.textContent = "Критическая ошибка инициализации";
                 statusText.style.color = "#ff0055";
             }
         }
 
         buildTape();
-        // Запуск после полной загрузки страницы
-        window.onload = initCentrifuge;
+        window.onload = initDonateXSocket;
     </script>
 </body>
 </html>
