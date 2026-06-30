@@ -125,7 +125,9 @@
         .status-dot {
             font-size: 10px;
             margin-top: 12px;
-            color: rgba(255, 255, 255, 0.4);
+            color: #ff0055;
+            cursor: pointer;
+            text-decoration: underline;
             font-weight: bold;
         }
 
@@ -159,14 +161,11 @@
         </div>
 
         <button class="spin-btn" onclick="spin()">Тест крутки</button>
-        <div class="status-dot" id="status">DonateX: Подключение...</div>
+        <div class="status-dot" id="status" onclick="clickInputToken()">[ НАСТРОИТЬ JWT ТОКЕН ]</div>
     </div>
 
     <script>
         const MIN_DONATE_AMOUNT = 50; 
-        
-        // Твой валидный токен
-        const DTX_TKN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJjNTBlNDkzNC1lYWYzLTRhMmUtOTVhNi04MDc2MGZiMzQ1MzQiLCJVc2VySWQiOiJkZTFjMDg2YS1kYmMxLTRmMjAtOWY4Ni00MDNhYjRhZGViNWQiLCJVc2VybmFtZSI6IlJlc2VydHplZCIsImlzcyI6Imh0dHBzOi8vZG9uYXRleC5nZy9hcGkiLCJhdWQiOiJodHRwczovL2RvbmF0ZXguZ2cifQ.3_g5UNTJ8OPyKFNxki09Gew6n39IreK-zPhM4RLrqAI";
 
         const listItems = [
             { text: "Экономический кризис", type: "chance-high", weight: 15 },
@@ -248,10 +247,28 @@
             }
         }
 
+        function clickInputToken() {
+            const token = prompt("Вставьте ваш актуальный JWT-токен из DonateX:");
+            if (token && token.trim().length > 10) {
+                localStorage.setItem('dtx_actual_tkn', token.trim());
+                alert("Токен сохранен в OBS! Перезапускаем виджет...");
+                location.reload();
+            } else {
+                alert("Токен не введен или слишком короткий!");
+            }
+        }
+
         function initDonateXSocket() {
+            const token = localStorage.getItem('dtx_actual_tkn');
+
+            if (!token) {
+                statusText.textContent = "[ Нажми сюда, чтобы ввести токен ]";
+                statusText.style.color = "#ff0055";
+                return;
+            }
+
             try {
-                // Передаем токен прямо в URL-параметрах, как требует DonateX API
-                const ws = new WebSocket(`wss://pubsub.donatex.gg/ws?token=${DTX_TKN}`);
+                const ws = new WebSocket(`wss://pubsub.donatex.gg/ws?token=${token}`);
 
                 ws.onopen = function() {
                     statusText.textContent = "DonateX: Подключено";
@@ -261,30 +278,26 @@
                 ws.onmessage = function(event) {
                     try {
                         const msg = JSON.parse(event.data);
-                        
-                        // Проверяем структуру уведомления о новом донате по документации
                         if (msg && msg.amount) {
                             const amount = parseFloat(msg.amount);
                             if (amount > 0) processDonate(amount);
                         }
-                    } catch (e) {
-                        console.error("Ошибка чтения данных уведомления:", e);
-                    }
+                    } catch (e) {}
                 };
 
                 ws.onclose = function() {
-                    statusText.textContent = "DonateX: Реконнект...";
+                    statusText.textContent = "DonateX: Отключено (Реконнект через 5с...)";
                     statusText.style.color = "#ff0055";
                     setTimeout(initDonateXSocket, 5000);
                 };
 
                 ws.onerror = function() {
-                    statusText.textContent = "DonateX: Ошибка сокета";
+                    statusText.textContent = "DonateX: Ошибка токена или сети";
                     statusText.style.color = "#ff0055";
                 };
 
             } catch (err) {
-                statusText.textContent = "Критическая ошибка инициализации";
+                statusText.textContent = "Ошибка инициализации сокета";
                 statusText.style.color = "#ff0055";
             }
         }
