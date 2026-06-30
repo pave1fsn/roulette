@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>STORM PC Roulette</title>
+    <style>
+        :root {
+            --bg-glass: rgba(10, 15, 25, 0.6);
+            --border-glass: rgba(0, 231, 255, 0.2);
+            --text-main: #e2e8f0;
+            --accent: #00e7ff;
+            --accent-drop: #ff0055;
+        }
+
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+            background: transparent;
+            color: var(--text-main);
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            width: 360px;
+            height: 550px;
+        }
+
+        .widget-container {
+            width: 100%;
+            background: var(--bg-glass);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-glass);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .header {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--accent);
+            margin-bottom: 15px;
+            font-weight: bold;
+            text-shadow: 0 0 8px rgba(0, 231, 255, 0.5);
+        }
+
+        .roulette-wrapper {
+            position: relative;
+            width: 100%;
+            height: 60px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .pointer {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 4px;
+            height: 100%;
+            background: var(--accent-drop);
+            z-index: 10;
+            box-shadow: 0 0 10px var(--accent-drop);
+        }
+
+        .tape {
+            display: flex;
+            position: absolute;
+            left: 50%;
+            height: 100%;
+            transition: transform 5s cubic-bezier(0.15, 0.85, 0.35, 1);
+            will-change: transform;
+        }
+
+        .item {
+            width: 150px;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            text-align: center;
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+            box-sizing: border-box;
+            padding: 0 10px;
+            flex-shrink: 0;
+        }
+
+        .chance-high { background: rgba(0, 231, 255, 0.1); color: #fff; }
+        .chance-low { background: rgba(255, 165, 0, 0.15); color: #ffca65; }
+        .chance-critical { background: rgba(255, 0, 85, 0.2); color: #ff6595; }
+
+        .result-box {
+            width: 100%;
+            min-height: 70px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        .result-title { font-size: 10px; text-transform: uppercase; color: rgba(255, 255, 255, 0.4); margin-bottom: 5px; }
+        .result-text { font-size: 16px; font-weight: bold; color: #fff; }
+        .result-text.active { color: var(--accent); text-shadow: 0 0 12px var(--accent); }
+        
+        .status-dot {
+            font-size: 10px;
+            margin-top: 12px;
+            color: #ff0055;
+            cursor: pointer;
+            text-decoration: underline;
+            font-weight: bold;
+        }
+
+        .spin-btn {
+            margin-top: 15px;
+            background: transparent;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            padding: 6px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="widget-container">
+        <div class="header">STORM PC ROULETTE</div>
+        
+        <div class="roulette-wrapper">
+            <div class="pointer"></div>
+            <div class="tape" id="tape"></div>
+        </div>
+
+        <div class="result-box">
+            <div class="result-title">Текущий дебафф</div>
+            <div class="result-text" id="resultText">Ожидание доната...</div>
+        </div>
+
+        <button class="spin-btn" onclick="spin()">Тест крутки</button>
+        <div class="status-dot" id="status" onclick="setupWidgetData()">[ НАСТРОИТЬ ПОДКЛЮЧЕНИЕ ]</div>
+    </div>
+
+    <script>
+        const MIN_DONATE_AMOUNT = 50; 
+
+        const listItems = [
+            { text: "Экономический кризис", type: "chance-high", weight: 15 },
+            { text: "Тяжелая ноша (15 мин)", type: "chance-high", weight: 15 },
+            { text: "Отключение интерфейса (15 мин)", type: "chance-high", weight: 15 },
+            { text: "Голодный сталкер", type: "chance-high", weight: 10 },
+            { text: "Выбросить все патроны", type: "chance-low", weight: 6 },
+            { text: "Выбросить все аптечки", type: "chance-low", weight: 6 },
+            { text: "Долой броню (15 мин)", type: "chance-low", weight: 6 },
+            { text: "Сломанный прицел (3 фрага)", type: "chance-low", weight: 6 },
+            { text: "Жесткий буст инвентаря", type: "chance-low", weight: 6 },
+            { text: "Пацифист (10 мин)", type: "chance-low", weight: 5 },
+            { text: "Антиоживление (Суицид)", type: "chance-critical", weight: 5 },
+            { text: "Смена локации (1 час)", type: "chance-critical", weight: 5 }
+        ];
+
+        const itemWidth = 150;
+        const tape = document.getElementById('tape');
+        const resultText = document.getElementById('resultText');
+        const statusText = document.getElementById('status');
+        let isSpinning = false;
+        let donateQueue = [];
+
+        function buildTape() {
+            tape.innerHTML = '';
+            for (let i = 0; i < 80; i++) {
+                const item = getRandomItemByWeight();
+                const div = document.createElement('div');
+                div.className = `item ${item.type}`;
+                div.textContent = item.text;
+                tape.appendChild(div);
+            }
+        }
+
+        function getRandomItemByWeight() {
+            let totalWeight = listItems.reduce((sum, item) => sum + item.weight, 0);
+            let random = Math.random() * totalWeight;
+            for (let i = 0; i < listItems.length; i++) {
+                if (random < listItems[i].weight) return listItems[i];
+                random -= listItems[i].weight;
+            }
+            return listItems[listItems.length - 1];
+        }
+
+        function spin() {
+            if (isSpinning) return;
+            isSpinning = true;
+
+            buildTape();
+            resultText.classList.remove('active');
+            resultText.textContent = "Выбор судьбы...";
+
+            const targetIndex = 65; 
+            const targetLeft = (targetIndex * itemWidth) + Math.floor(Math.random() * (itemWidth - 20)) + 10;
+            
+            tape.style.transition = 'none';
+            tape.style.transform = 'translateX(0px)';
+            
+            setTimeout(() => {
+                tape.style.transition = 'transform 5s cubic-bezier(0.15, 0.85, 0.35, 1)';
+                tape.style.transform = `translateX(-${targetLeft}px)`;
+            }, 50);
+
+            setTimeout(() => {
+                resultText.textContent = tape.children[targetIndex].textContent;
+                resultText.classList.add('active');
+                isSpinning = false;
+                
+                if (donateQueue.length > 0) {
+                    setTimeout(() => processDonate(donateQueue.shift()), 3000);
+                }
+            }, 5050);
+        }
+
+        function processDonate(amount) {
+            if (amount >= MIN_DONATE_AMOUNT) {
+                if (isSpinning) donateQueue.push(amount);
+                else spin();
+            }
+        }
+
+        function setupWidgetData() {
+            const token = prompt("Шаг 1: Вставьте ваш JWT-токен:");
+            if (!token) return;
+            const uid = prompt("Шаг 2: Вставьте ваш User ID (из сокетов DonateX):");
+            if (!uid) return;
+
+            localStorage.setItem('dtx_tkn', token.trim());
+            localStorage.setItem('dtx_uid', uid.trim());
+            alert("Данные сохранены локально! Страница будет перезапущена.");
+            location.reload();
+        }
+
+        function connect() {
+            const token = localStorage.getItem('dtx_tkn');
+            const uid = localStorage.getItem('dtx_uid');
+
+            if (!token || !uid) {
+                statusText.textContent = "[ Нажми сюда для настройки токена ]";
+                statusText.style.color = "#ff0055";
+                return;
+            }
+
+            try {
+                const ws = new WebSocket('wss://pubsub.donatex.gg/ws');
+
+                ws.onopen = function() {
+                    statusText.textContent = "Авторизация сокетов...";
+                    statusText.style.color = "#ffca65";
+                    ws.send(JSON.stringify({ action: "auth", token: token }));
+                };
+
+                ws.onmessage = function(event) {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        if (msg.status === "success" || msg.event === "connected") {
+                            statusText.textContent = "DonateX: Подключено";
+                            statusText.style.color = "#00e7ff";
+                            return;
+                        }
+
+                        let amount = 0;
+                        if (msg.data && msg.data.data) {
+                            amount = parseFloat(msg.data.data.amount || msg.data.data.sum || 0);
+                        }
+                        if (amount > 0) processDonate(amount);
+                    } catch (e) {}
+                };
+
+                ws.onclose = function() {
+                    statusText.textContent = "Переподключение...";
+                    statusText.style.color = "#ff0055";
+                    setTimeout(connect, 5000);
+                };
+            } catch (e) {
+                statusText.textContent = "Ошибка сети";
+            }
+        }
+
+        buildTape();
+        connect();
+    </script>
+</body>
+</html>
